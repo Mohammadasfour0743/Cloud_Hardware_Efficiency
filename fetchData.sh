@@ -1,0 +1,1 @@
+wget -c --retry-connrefused --tries=0 --timeout=50 http://aliopentrace.oss-cn-beijing.aliyuncs.com/v2017Traces/alibaba-trace-2017.tar.gz
