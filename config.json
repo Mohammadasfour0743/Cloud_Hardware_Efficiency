@@ -1,0 +1,71 @@
+{
+  "datasets": {
+    "batch_task": {
+      "path": "data/batch_task.csv",
+      "columns": [
+        {"name": "create_timestamp", "type": "long"},
+        {"name": "modify_timestamp", "type": "long"},
+        {"name": "job_id",           "type": "long"},
+        {"name": "task_id",          "type": "long"},
+        {"name": "instance_num",     "type": "long"},
+        {"name": "status",           "type": "string"},
+        {"name": "plan_cpu",         "type": "double"},
+        {"name": "plan_mem",         "type": "double"}
+      ],
+      "keep_status": null,
+      "not_null": ["job_id", "task_id", "plan_cpu", "plan_mem"],
+      "not_zero": []
+    },
+    "batch_instance": {
+      "path": "data/batch_instance.csv",
+      "columns": [
+        {"name": "start_timestamp", "type": "long"},
+        {"name": "end_timestamp",   "type": "long"},
+        {"name": "job_id",          "type": "long"},
+        {"name": "task_id",         "type": "long"},
+        {"name": "machine_id",      "type": "long"},
+        {"name": "status",          "type": "string"},
+        {"name": "seq_no",          "type": "long"},
+        {"name": "total_seq_no",    "type": "long"},
+        {"name": "real_cpu_max",    "type": "double"},
+        {"name": "real_cpu_avg",    "type": "double"},
+        {"name": "real_mem_max",    "type": "double"},
+        {"name": "real_mem_avg",    "type": "double"}
+      ],
+      "keep_status": "Terminated",
+      "not_null": ["job_id", "task_id", "real_cpu_avg", "real_mem_avg", "end_timestamp"],
+      "not_zero": ["job_id", "task_id", "real_cpu_avg", "real_mem_avg", "end_timestamp"]
+    },
+    "server_usage": {
+      "path": "data/server_usage.csv",
+      "columns": [
+        {"name": "timestamp",  "type": "long"},
+        {"name": "machine_id", "type": "long"},
+        {"name": "util_cpu",   "type": "double"},
+        {"name": "util_mem",   "type": "double"},
+        {"name": "util_disk",  "type": "double"},
+        {"name": "load1",      "type": "double"},
+        {"name": "load5",      "type": "double"},
+        {"name": "load15",     "type": "double"}
+      ],
+      "keep_status": null,
+      "not_null": ["machine_id", "util_cpu", "util_mem"],
+      "not_zero": []
+    },
+    "server_event": {
+      "path": "data/server_event.csv",
+      "columns": [
+        {"name": "timestamp",     "type": "long"},
+        {"name": "machine_id",    "type": "long"},
+        {"name": "event_type",    "type": "string"},
+        {"name": "event_detail",  "type": "string"},
+        {"name": "cpu_capacity",  "type": "double"},
+        {"name": "mem_capacity",  "type": "double"},
+        {"name": "disk_capacity", "type": "double"}
+      ],
+      "keep_status": null,
+      "not_null": ["machine_id"],
+      "not_zero": []
+    }
+  }
+}
