@@ -35,6 +35,17 @@ def clean(df, cfg):
         df = df.filter(F.col(col) != 0)
     return df
 
+#Check README for more info
+def check_units():
+    inst = spark.read.format("delta").load("delta/batch_instance")
+    task = spark.read.format("delta").load("delta/batch_task")
+
+    task.select("plan_cpu", "plan_mem").describe().show()
+    inst.select("real_cpu_avg", "real_mem_avg").describe().show()
+
+
+#Big functions
+
 def load_data(name, cfg):
     schema = build_schema(cfg["columns"])
 
@@ -52,6 +63,13 @@ def load_data(name, cfg):
     stats.append((name, before, after, dropped_pct))
     print(f"{name}: {before} -> {after} rows ({dropped_pct:.2f}% dropped)")
 
+def join_tables():
+    inst = spark.read.format("delta").load("delta/batch_instance")
+    task = spark.read.format("delta").load("delta/batch_task")
+
+    return inst.join(task, on = ["job_id", "task_id"], how = "inner")
+
+
 # main
 with open("config.json") as f:
     config = json.load(f)
@@ -62,4 +80,5 @@ for name, cfg in config["datasets"].items():
     print(f"Loading {name}...")
     load_data(name, cfg)
     print(f"Finished: {name}...")
+
 
