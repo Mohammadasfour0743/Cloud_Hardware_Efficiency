@@ -80,14 +80,15 @@ def join_tables():
 
 def perform_calculations():
     joined_inst_task = spark.read.format("delta").load("delta/joined_inst_task")
+
     metrics_df = joined_inst_task\
-            .withColumn("cpu_waste", F.round(F.col("plan_cpu_norm") - F.col("real_cpu_avg"), 2))\
-            .withColumn("mem_waste", F.round(F.col("plan_mem") - F.col("real_mem_avg"), 2))\
-            .withColumn("duration", F.round(F.col("end_timestamp") - F.col("start_timestamp"), 2))\
-            .withColumn("cpu_waste_core_seconds", F.round(F.col("cpu_waste") * F.col("duration"), 2))\
-            .withColumn("mem_waste_weighted", F.round(F.col("mem_waste") * F.col("duration"), 2))\
-            .withColumn("cpu_use_ratio", F.round(F.col("real_cpu_avg")/F.col("plan_cpu"), 2))\
-            .withColumn("mem_use_ratio", F.round(F.col("real_mem_avg")/F.col("plan_mem"),2))
+            .withColumn("cpu_waste", F.col("plan_cpu_norm") - F.col("real_cpu_avg"))\
+            .withColumn("mem_waste", F.col("plan_mem") - F.col("real_mem_avg"))\
+            .withColumn("duration", F.col("end_timestamp") - F.col("start_timestamp"))\
+            .withColumn("cpu_waste_core_seconds", F.col("cpu_waste") * F.col("duration"))\
+            .withColumn("mem_waste_weighted", F.col("mem_waste") * F.col("duration"))\
+            .withColumn("cpu_use_ratio", F.col("real_cpu_avg")/F.col("plan_cpu_norm"))\
+            .withColumn("mem_use_ratio", F.col("real_mem_avg")/F.col("plan_mem"))
     metrics_df.write.format("delta").mode("overwrite") \
     .option("overwriteSchema", "true").save("./delta/metrics")
                         
@@ -97,38 +98,65 @@ def perform_calculations():
 
 def perform_calculations_grouped():
     metrics_df = spark.read.format("delta").load("delta/metrics")
-    metrics_df.select("job_id", "task_id", "cpu_waste", "mem_waste", "duration", "cpu_waste_core_seconds", "mem_waste_weighted", "cpu_use_ratio", "mem_use_ratio").show(3)
+    # metrics_df.select("job_id", "task_id", "mem_waste", "mem_waste_weighted").show(3)
     
     metrics_machine  = metrics_df.select("machine_id", "cpu_waste", "mem_waste", "cpu_waste_core_seconds", "mem_waste_weighted")\
                 .groupBy("machine_id")\
-                .agg(F.round(F.sum("cpu_waste_core_seconds"),2).alias("total_cpu_waste"),
-                     F.round(F.sum("mem_waste_weighted"),2).alias("total_mem_waste"),
+                .agg(F.sum("cpu_waste_core_seconds").alias("total_cpu_waste"),
+                     F.sum("mem_waste_weighted").alias("total_mem_waste"),
                     #  F.sum("cpu_waste").alias("total_avg_cpu_waste"),
                     #  F.sum("mem_waste").alias("total_avg_mem_waste")
                      )
     metrics_jobs  = metrics_df.select("job_id", "cpu_waste", "mem_waste", "cpu_waste_core_seconds", "mem_waste_weighted")\
                     .groupBy("job_id")\
-                    .agg(F.round(F.sum("cpu_waste_core_seconds"),2).alias("total_cpu_waste"),
-                         F.round(F.sum("mem_waste_weighted"),2).alias("total_mem_waste"),
+                    .agg(F.sum("cpu_waste_core_seconds").alias("total_cpu_waste"),
+                         F.sum("mem_waste_weighted").alias("total_mem_waste"),
                         #  F.sum("cpu_waste").alias("total_avg_cpu_waste"),
                         #  F.sum("mem_waste").alias("total_avg_mem_waste")
                          )
 
     metrics_time = metrics_df.select("start_timestamp", "cpu_waste", "mem_waste", "cpu_waste_core_seconds", "mem_waste_weighted")\
                     .groupBy("start_timestamp")\
-                    .agg(F.round(F.sum("cpu_waste_core_seconds"),2).alias("total_cpu_waste"),
-                         F.round(F.sum("mem_waste_weighted"),2).alias("total_mem_waste"),
+                    .agg(F.sum("cpu_waste_core_seconds").alias("total_cpu_waste"),
+                         F.sum("mem_waste_weighted").alias("total_mem_waste"),
                         #  F.sum("cpu_waste").alias("total_avg_cpu_waste"),
                         #  F.sum("mem_waste").alias("total_avg_mem_waste")
                         )
 
     
-    metrics_machine.show(10)
-    metrics_jobs.show(10)
-    metrics_time.show(10)
-    return metrics_machine, metrics_jobs, metrics_time
-            
+    # metrics_machine.show(10)
+    # metrics_jobs.show(10)
+    # metrics_time.show(10)
+    metrics_machine.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true").save("./delta/metrics_machine")
     
+    metrics_jobs.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true").save("./delta/metrics_jobs")
+    
+    metrics_time.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true").save("./delta/metrics_time")
+            
+def server_joins():
+    server_usage_df = spark.read.format("delta").load("delta/server_usage")
+
+    server_usage_avg = server_usage_df.select("machine_id","util_cpu","util_mem").groupBy("machine_id")\
+        .agg(F.avg("util_cpu").alias("avg_util_cpu"), 
+             F.avg("util_mem").alias("avg_util_mem")
+            )#\
+                # .orderBy(F.col("machine_id").asc()).show(3)
+    
+    server_event_df = spark.read.format("delta").load("delta/server_event")
+
+    metrics_machine = spark.read.format("delta").load("delta/metrics_machine")
+    
+    joined_server_machine = metrics_machine.join(server_usage_avg, on = ["machine_id"], how = "inner")\
+        .join(server_event_df, on = ["machine_id"], how = "inner")
+
+    joined_server_machine.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true").save("./delta/joined_server_machine")
+
+    joined_server_machine.select("machine_id", "avg_util_cpu", "avg_util_mem", "cpu_capacity", "mem_capacity").orderBy(F.col("machine_id")).show(5)
+
 # main
 with open("config.json") as f:
     config = json.load(f)
@@ -141,7 +169,7 @@ stats = []
 #     load_data(name, cfg)
 #     print(f"Finished: {name}...")
 
-check_units()
+# check_units()
 # removed temporarily to not rerun the write
 # joined_inst_task = join_tables()
 # joined_inst_task = joined_inst_task.withColumn("plan_cpu_norm", F.col("plan_cpu")/100)
@@ -150,4 +178,18 @@ check_units()
 #     .option("overwriteSchema", "true").save("./delta/joined_inst_task")
 # print(joined_inst_task.columns)
 # perform_calculations()
-perform_calculations_grouped()
+
+# perform_calculations_grouped()
+
+
+# server_joins()
+
+# own tests and observations
+# joined_inst_task = spark.read.format("delta").load("delta/joined_inst_task")
+# joined_inst_task.select("plan_cpu","real_cpu_avg").show(3)
+# # total  = joined_inst_task.count()
+# count = joined_inst_task.filter(F.col("plan_mem")>F.col("real_mem_avg")).count()
+# print(f"all rows:  {total}")
+# print(f"times plan_mem is larger than real_mem_avg: {count}")
+
+# print(f"Same thing in percentage: {100*(count/total)}")
