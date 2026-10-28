@@ -153,8 +153,8 @@ def server_joins():
     joined_server_machine.write.format("delta").mode("overwrite") \
     .option("overwriteSchema", "true").save("./delta/joined_server_machine")
 
-    joined_server_machine.select("machine_id", "avg_util_cpu", "avg_util_mem", "cpu_capacity", "mem_capacity").orderBy(F.col("machine_id")).show(5)
-    # joined_server_machine.groupBy("machine_id").count().filter(F.col("count")>1).show(20)
+    # joined_server_machine.select("machine_id", "avg_util_cpu", "avg_util_mem", "cpu_capacity", "mem_capacity").orderBy(F.col("machine_id")).show(5)
+
 
 # main
 with open("config.json") as f:
@@ -162,7 +162,7 @@ with open("config.json") as f:
 
 stats = []
 
-# # commented out temporarily to not rerun the read/write of datasets
+# commented out temporarily to not rerun the read/write of datasets
 for name, cfg in config["datasets"].items():
     print(f"Loading {name}...")
     load_data(name, cfg)
@@ -171,7 +171,7 @@ for name, cfg in config["datasets"].items():
 # check_units()
 # removed temporarily to not rerun the write
 joined_inst_task = join_tables()
-joined_inst_task = joined_inst_task.withColumn("plan_cpu_norm", F.col("plan_cpu")/100)
+joined_inst_task = joined_inst_task.withColumn("plan_cpu_norm", F.col("plan_cpu")/100) # normalization
     
 joined_inst_task.write.format("delta").mode("overwrite") \
     .option("overwriteSchema", "true").save("./delta/joined_inst_task")
