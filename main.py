@@ -1,23 +1,25 @@
 from pyspark.sql import SparkSession, functions as F
-from pyspark.sql.functions import col, to_timestamp, lower, concat, lpad, lit, when, trim
 from pyspark.sql.types import *
-from pyspark.sql.dataframe import DataFrame
+
 from pyspark.sql.window import Window 
-from delta import configure_spark_with_delta_pip
-import re
-import time
+from cassandra.cluster import Cluster
 import json
 
 #The second line (with 4g) specifies how much RAM to use. change according to machine
 spark = SparkSession.builder \
     .appName("IngestionFramework") \
     .config("spark.driver.memory", "4g") \
-    .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.2.0") \
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .config("spark.jars.packages",
+            "io.delta:delta-spark_2.12:3.2.0,"
+            "com.datastax.spark:spark-cassandra-connector_2.12:3.5.1") \
+    .config("spark.sql.extensions",
+            "io.delta.sql.DeltaSparkSessionExtension,"
+            "com.datastax.spark.connector.CassandraSparkExtensions") \
+    .config("spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .config("spark.cassandra.connection.host", "127.0.0.1") \
     .getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
-
 
 TYPE_MAP = {"long": LongType(),
             "double": DoubleType(),
@@ -155,36 +157,79 @@ def server_joins():
 
     # joined_server_machine.select("machine_id", "avg_util_cpu", "avg_util_mem", "cpu_capacity", "mem_capacity").orderBy(F.col("machine_id")).show(5)
 
+def create_schema(path="schema.cql"):
+    """ Initialise the cassandra database with the given cql file"""
+    cluster = Cluster(["127.0.0.1"])
+    session = cluster.connect()
+    with open(path) as f:
+        statements = [s.strip() for s in f.read().split(";") if s.strip()]
+    for stmt in statements:
+        if stmt.upper().startswith("USE"):
+            session.set_keyspace(stmt.split()[1])
+        else:
+            session.execute(stmt)
+    cluster.shutdown()
+    print("Successfully initialised cassandra database")
 
-# main
-with open("config.json") as f:
-    config = json.load(f)
+CASS_KEYSPACE = "cloud_waste"
 
-stats = []
+def write_to_cassandra(df, table):
+    df.write \
+      .format("org.apache.spark.sql.cassandra") \
+      .mode("append") \
+      .options(table=table, keyspace=CASS_KEYSPACE) \
+      .save()
+    print(f"Wrote {table} in cassandra")
 
-# commented out temporarily to not rerun the read/write of datasets
-for name, cfg in config["datasets"].items():
-    print(f"Loading {name}...")
-    load_data(name, cfg)
-    print(f"Finished: {name}...")
+def store_in_cassandra():
+    # waste_by_machine: machine waste + utilization + capacity (output of server_joins)
+    machine = spark.read.format("delta").load("delta/joined_server_machine") \
+        .select("machine_id", "total_cpu_waste", "total_mem_waste",
+                "avg_util_cpu", "avg_util_mem", "cpu_capacity", "mem_capacity")
+    write_to_cassandra(machine, "waste_by_machine")
 
-# check_units()
-# removed temporarily to not rerun the write
-joined_inst_task = join_tables()
-joined_inst_task = joined_inst_task.withColumn("plan_cpu_norm", F.col("plan_cpu")/100) # normalization
+    jobs = spark.read.format("delta").load("delta/metrics_jobs")
+    write_to_cassandra(jobs, "waste_by_job")
+
+    hourly = spark.read.format("delta").load("delta/metrics_time") \
+        .withColumn("day", F.floor(F.col("hour") / 24).cast("long")) \
+        .withColumn("hour", F.col("hour").cast("long")) \
+        .select("day", "hour", "total_cpu_waste", "total_mem_waste")
+    write_to_cassandra(hourly, "waste_by_hour")
+
+
+if __name__ == "__main__":
+    with open("config.json") as f:
+        config = json.load(f)
+
+    stats = []
+
+    # commented out temporarily to not rerun the read/write of datasets
+    for name, cfg in config["datasets"].items():
+        print(f"Loading {name}...")
+        load_data(name, cfg)
+        print(f"Finished: {name}...")
+
+    # check_units()
+    # removed temporarily to not rerun the write
+    joined_inst_task = join_tables()
+    joined_inst_task = joined_inst_task.withColumn("plan_cpu_norm", F.col("plan_cpu")/100) # normalization
+        
+    joined_inst_task.write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").save("./delta/joined_inst_task")
+    print(joined_inst_task.columns)
+
+    # map step
+    perform_calculations()
+    # reduce step
+    perform_calculations_grouped()
+    # join information from multiple tables
+    server_joins()
     
-joined_inst_task.write.format("delta").mode("overwrite") \
-    .option("overwriteSchema", "true").save("./delta/joined_inst_task")
-print(joined_inst_task.columns)
+    # Initialise the cassandra database. Requires cassandra to be already active ($ sudo service cassandra start)
+    create_schema()
 
-# map step
-perform_calculations()
-# reduce step
-perform_calculations_grouped()
-# join information from multiple tables
-server_joins()
+    # Store waste_by_machine, waste_by_job, waste_by_hour in cassandra
 
-
-
-
+    store_in_cassandra()
 

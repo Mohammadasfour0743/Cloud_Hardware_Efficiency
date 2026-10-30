@@ -5,7 +5,7 @@
 
 - In linux/WSL terminal, first download python and jdk (if you dont have them): 
 
-    `sudo apt install -y python3 python3-pip python3-venv openjdk-11-jdk`
+    `sudo apt install -y python3 python3-pip python3-venv openjdk-17-jdk`
 
 - Then create a virtual env and activate:
 
@@ -15,7 +15,7 @@
 
 - Install the python packages. Be sure to have the same name since it breaks if versions are different.
 
- `pip -q install pyspark==3.5.6 delta-spark==3.2.0`
+ `pip -q install pyspark==3.5.6 delta-spark==3.2.0 cassandra-driver streamlit`
 
 ## Dataset Download
 To download dataset execute the file `fetchData.sh`. Alternatively execute command in terminal: 
@@ -23,44 +23,42 @@ To download dataset execute the file `fetchData.sh`. Alternatively execute comma
 
 Then extract the folder, and rename it to "data"
 
+## Cassandra installation instructions
 
+Note: newer versions than java 17 may not work with cassandra.
 
+- To get the Apache signing key, run:
 
+    `sudo mkdir -p /etc/apt/keyrings`
 
-### Note about cpu usage (Remove later):
-to get the efficiency you subtract real_cpu_avg (batch_instance) from plan_cpu (batch_task)
-real_cpu_avg is normalized between [0,1], but plan_cpu is in order 100 (so its multiplied by 100
-i.e. if the value is 50 then its 0.5)
-When you want to do effeciency metric, divide plan_cpu by a 100 so both are in the same units. Memory is normalized so that's alright
+    `sudo curl -o /etc/apt/keyrings/apache-cassandra.asc https://downloads.apache.org/cassandra/KEYS`
 
-Check the function check_units() to see the output
+- Then add the cassandra 5.0 repository:
 
+    `echo "deb [signed-by=/etc/apt/keyrings/apache-cassandra.asc] https://debian.cassandra.apache.org 50x main" | sudo tee /etc/apt/sources.list.d/cassandra.sources.list`
 
-|summary|          plan_cpu|            plan_mem|
+- Then update the package list and install cassandra:
 
-|  count|             71536|               71536|
+    `sudo apt update`
 
-|   mean| 62.50020968463431|0.007248826701042301|
+    `sudo apt install cassandra -y`
 
-| stddev|22.585005580365387| 0.00434242760109868|
+## Running the project
 
-|    min|              40.0|0.002754122123573...|
+- Before running main.py, start cassandra:
 
-|    max|             800.0|  0.1273315559236922|
+    `sudo service cassandra start`
 
+- Then run `nodetool status` to check if the server runs fine. Note that cassandra may take up to a minute to start, it may fail if you use this command too soon. If it shows a node with status UN (meaning Up/Normal) it is running properly.
 
-+-------+------------------+--------------------+
+- Execute `main.py`:
 
-|summary|      real_cpu_avg|        real_mem_avg|
+    `python3 main.py`
 
+This will process data, initialise the cassandra database and write `waste_by_machine`, `waste_by_job`, `waste_by_hour` to cassandra.
 
-|  count|           1292820|             1292820|
+- Execute:
 
-|   mean|0.5407433362726333| 0.01773499288846844|
+    `streamlit run app.py`
 
-| stddev| 0.453113098628032|0.014726896667051913|
-
-|    min|              0.01|3.468537260890948E-4|
-
-|    max|              4.44| 0.16389615095902466|
-+-------+------------------+--------------------+
+The application should run in your browser automatically. If it does not (which happens if you use WSL), use the given link (which should be http://localhost:8501)
