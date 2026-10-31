@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS waste_by_machine (
   total_mem_waste double,
   avg_util_cpu double,
   avg_util_mem double,
-  cpu_capacity bigint,
-  mem_capacity bigint
+  cpu_capacity double,
+  mem_capacity double
 );
 
 CREATE TABLE IF NOT EXISTS waste_by_job (

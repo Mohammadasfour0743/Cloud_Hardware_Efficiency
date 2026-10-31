@@ -201,7 +201,7 @@ def store_in_cassandra():
 if __name__ == "__main__":
     with open("config.json") as f:
         config = json.load(f)
-
+    
     stats = []
 
     # commented out temporarily to not rerun the read/write of datasets
@@ -232,4 +232,3 @@ if __name__ == "__main__":
     # Store waste_by_machine, waste_by_job, waste_by_hour in cassandra
 
     store_in_cassandra()
-
